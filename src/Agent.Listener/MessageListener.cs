@@ -67,6 +67,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Listener
             VssCredentials creds = credMgr.LoadCredentials();
             Uri uri = new Uri(serverUrl);
             VssConnection conn = VssUtil.CreateConnection(uri, creds);
+            conn.Settings.SendTimeout = TimeSpan.FromSeconds(60);
             Trace.Info("VssConnection created");
 
             var agent = new TaskAgentReference

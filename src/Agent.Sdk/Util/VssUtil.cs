@@ -37,36 +37,39 @@ namespace Microsoft.VisualStudio.Services.Agent.Util
             VssHttpMessageHandler.DefaultWebProxy = proxy;
         }
 
-        public static VssConnection CreateConnection(Uri serverUri, VssCredentials credentials, IEnumerable<DelegatingHandler> additionalDelegatingHandler = null)
+        public static VssConnection CreateConnection(Uri serverUri, VssCredentials credentials, IEnumerable<DelegatingHandler> additionalDelegatingHandler = null, VssClientHttpRequestSettings settings = null)
         {
-            VssClientHttpRequestSettings settings = VssClientHttpRequestSettings.Default.Clone();
-
-            int maxRetryRequest;
-            if (!int.TryParse(Environment.GetEnvironmentVariable("VSTS_HTTP_RETRY") ?? string.Empty, out maxRetryRequest))
+            if (settings == null)
             {
-                maxRetryRequest = 5;
+                settings = VssClientHttpRequestSettings.Default.Clone();
+
+                int maxRetryRequest;
+                if (!int.TryParse(Environment.GetEnvironmentVariable("VSTS_HTTP_RETRY") ?? string.Empty, out maxRetryRequest))
+                {
+                    maxRetryRequest = 5;
+                }
+
+                // make sure MaxRetryRequest in range [5, 10]
+                settings.MaxRetryRequest = Math.Min(Math.Max(maxRetryRequest, 5), 10);
+
+                int httpRequestTimeoutSeconds;
+                if (!int.TryParse(Environment.GetEnvironmentVariable("VSTS_HTTP_TIMEOUT") ?? string.Empty, out httpRequestTimeoutSeconds))
+                {
+                    httpRequestTimeoutSeconds = 100;
+                }
+
+                // make sure httpRequestTimeoutSeconds in range [100, 1200]
+                settings.SendTimeout = TimeSpan.FromSeconds(Math.Min(Math.Max(httpRequestTimeoutSeconds, 100), 1200));
+
+                // Remove Invariant from the list of accepted languages.
+                //
+                // The constructor of VssHttpRequestSettings (base class of VssClientHttpRequestSettings) adds the current
+                // UI culture to the list of accepted languages. The UI culture will be Invariant on OSX/Linux when the
+                // LANG environment variable is not set when the program starts. If Invariant is in the list of accepted
+                // languages, then "System.ArgumentException: The value cannot be null or empty." will be thrown when the
+                // settings are applied to an HttpRequestMessage.
+                settings.AcceptLanguages.Remove(CultureInfo.InvariantCulture);
             }
-
-            // make sure MaxRetryRequest in range [5, 10]
-            settings.MaxRetryRequest = Math.Min(Math.Max(maxRetryRequest, 5), 10);
-
-            int httpRequestTimeoutSeconds;
-            if (!int.TryParse(Environment.GetEnvironmentVariable("VSTS_HTTP_TIMEOUT") ?? string.Empty, out httpRequestTimeoutSeconds))
-            {
-                httpRequestTimeoutSeconds = 100;
-            }
-
-            // make sure httpRequestTimeoutSeconds in range [100, 1200]
-            settings.SendTimeout = TimeSpan.FromSeconds(Math.Min(Math.Max(httpRequestTimeoutSeconds, 100), 1200));
-
-            // Remove Invariant from the list of accepted languages.
-            //
-            // The constructor of VssHttpRequestSettings (base class of VssClientHttpRequestSettings) adds the current
-            // UI culture to the list of accepted languages. The UI culture will be Invariant on OSX/Linux when the
-            // LANG environment variable is not set when the program starts. If Invariant is in the list of accepted
-            // languages, then "System.ArgumentException: The value cannot be null or empty." will be thrown when the
-            // settings are applied to an HttpRequestMessage.
-            settings.AcceptLanguages.Remove(CultureInfo.InvariantCulture);
 
             VssConnection connection = new VssConnection(serverUri, new VssHttpMessageHandler(credentials, settings), additionalDelegatingHandler);
             return connection;

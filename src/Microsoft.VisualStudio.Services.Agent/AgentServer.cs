@@ -13,6 +13,8 @@ namespace Microsoft.VisualStudio.Services.Agent
     {
         Task ConnectAsync(VssConnection agentConnection);
 
+        Task RefreshConnectionAsync();
+
         // Configuration
         Task<TaskAgent> AddAgentAsync(Int32 agentPoolId, TaskAgent agent);
         Task DeleteAgentAsync(int agentPoolId, int agentId);
@@ -43,6 +45,7 @@ namespace Microsoft.VisualStudio.Services.Agent
     {
         private bool _hasConnection;
         private VssConnection _connection;
+        private VssConnection _staleConnection;
         private TaskAgentHttpClient _taskAgentClient;
 
         public async Task ConnectAsync(VssConnection agentConnection)
@@ -63,7 +66,7 @@ namespace Microsoft.VisualStudio.Services.Agent
                 }
                 catch (Exception ex) when (attemptCount > 0)
                 {
-                    Trace.Info($"Catch exception during connect. {attemptCount} attemp left.");
+                    Trace.Info($"Catch exception during connect. {attemptCount} attempt left.");
                     Trace.Error(ex);
                 }
 
@@ -74,11 +77,45 @@ namespace Microsoft.VisualStudio.Services.Agent
             _hasConnection = true;
         }
 
+        public async Task RefreshConnectionAsync()
+        {
+
+            _hasConnection = false;
+            Trace.Info($"Refresh VssConnection to get on a different AFD node.");
+            var newConnection = VssUtil.CreateConnection(_connection.Uri, _connection.Credentials, settings: _connection.Settings);
+            int attemptCount = 5;
+            while (!newConnection.HasAuthenticated && attemptCount-- > 0)
+            {
+                try
+                {
+                    await newConnection.ConnectAsync();
+                    break;
+                }
+                catch (Exception ex) when (attemptCount > 0)
+                {
+                    Trace.Info($"Catch exception during connect. {attemptCount} attempt left.");
+                    Trace.Error(ex);
+                }
+
+                await Task.Delay(100);
+            }
+
+            _staleConnection = _connection;
+            _connection = newConnection;
+            _taskAgentClient = _connection.GetClient<TaskAgentHttpClient>();
+            _hasConnection = true;
+        }
+
         private void CheckConnection()
         {
             if (!_hasConnection)
             {
                 throw new InvalidOperationException("SetConnection");
+            }
+            else if (_staleConnection != null)
+            {
+                _staleConnection?.Dispose();
+                _staleConnection = null;
             }
         }
 
